@@ -10,7 +10,7 @@ from datetime import datetime
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 
 # ---------------------------------------------------------
-# 2. CSS 스타일 (박스 높이 문제 수정됨)
+# 2. CSS 스타일 (박스 높이 및 디자인 원복)
 # ---------------------------------------------------------
 style_css = """
 <style>
@@ -30,8 +30,7 @@ style_css = """
         border-radius: 22px;
         padding: 14px 16px;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        height: auto; /* [수정] 높이 자동 조절 */
-        /* min-height: 320px;  <-- [삭제] 이 부분 때문에 여백이 생겼습니다 */
+        height: auto; /* 높이 자동 조절 (여백 제거됨) */
         box-sizing: border-box;
         display: flex;
         flex-direction: column;
@@ -146,7 +145,7 @@ def get_fg_index():
     except:
         return {"score": 50, "rating": "Neutral", "history": [50]*21}
 
-# (2) 야후 파이낸스
+# (2) 야후 파이낸스 (데이터 깨짐 방지 포맷팅 추가)
 @st.cache_data(ttl=60)
 def get_yahoo(ticker):
     try:
@@ -161,11 +160,13 @@ def get_yahoo(ticker):
         if curr >= 1000: val = f"{curr:,.0f}"
         elif curr < 1: val = f"{curr:,.3f}"
         else: val = f"{curr:,.2f}"
-        return val, pct
+        
+        # [수정] 소수점 둘째 자리까지 강제 포맷팅하여 긴 숫자 방지
+        return val, f"{pct:+.2f}%"
     except:
-        return "-", 0.0
+        return "-", "0.00%"
 
-# (3) FRED 데이터
+# (3) FRED 데이터 (차단 방지 유지)
 @st.cache_data(ttl=3600) 
 def get_fred(series_id):
     try:
@@ -189,20 +190,22 @@ def get_fred(series_id):
         pass
     return None, 0
 
-# HTML 생성기
+# HTML 생성기 (포맷팅 강화)
 def make_row(label, value, change):
     color = "neutral"
-    if isinstance(change, (int, float)):
+    
+    # change가 문자열인 경우 (야후 데이터)
+    if isinstance(change, str):
+        if "+" in change: color = "up"
+        elif "-" in change and change != "-": color = "down"
+        change_str = change
+        
+    # change가 숫자인 경우 (FRED 데이터)
+    elif isinstance(change, (int, float)):
         if change > 0: color = "up"
         elif change < 0: color = "down"
         sign = "+" if change > 0 else ""
         change_str = f"{sign}{change:.2f}"
-        if isinstance(change, float) and abs(change) < 0.0001: 
-             change_str = "0.00%" 
-    elif isinstance(change, str):
-        if "+" in change: color = "up"
-        elif "-" in change and change != "-": color = "down"
-        change_str = change
     else:
         change_str = "-"
 
@@ -216,17 +219,15 @@ now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
 col_fg, col_fred, col_idx = st.columns(3)
 
 # =========================================================
-# [1] Fear & Greed (박스 깨짐 수정 & 눈금 적용)
+# [1] Fear & Greed (그래프 쳐짐 수정 유지)
 # =========================================================
 fg = get_fg_index()
 
 with col_fg:
-    # 1. 박스 시작
     st.markdown("""<div class="widget-box"><div class="header-row"><span class="title">Fear & Greed Index</span><span class="date">(Last 3 weeks)</span></div>""", unsafe_allow_html=True)
     
     c1, c2 = st.columns([1.8, 1])
     with c1:
-        # [수정] 꺾은선 그래프: 눈금(0, 25, 50, 75, 100) 적용 및 마진 최적화
         fig = go.Figure(go.Scatter(
             y=fg['history'], 
             mode='lines', 
@@ -235,34 +236,32 @@ with col_fg:
         ))
         fig.update_layout(
             paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(l=25, r=10, t=10, b=20), # 마진 조절로 그래프 위치 잡기
+            margin=dict(l=25, r=10, t=10, b=20),
             xaxis=dict(visible=False), 
             yaxis=dict(
                 visible=True, 
                 range=[0, 100], 
-                tickmode='array',           # [추가] 눈금 모드 설정
-                tickvals=[0, 25, 50, 75, 100], # [추가] 요청하신 눈금
+                tickmode='array',           
+                tickvals=[0, 25, 50, 75, 100], 
                 ticktext=["0", "25", "50", "75", "100"],
                 showgrid=True, 
                 gridcolor='#333', 
                 tickfont=dict(size=10, color='#888')
             ),
-            height=130 # 높이 약간 확보
+            height=130
         )
         st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True})
     
     with c2:
-        # 게이지
         fig_g = go.Figure(go.Indicator(mode="gauge", value=fg['score'], gauge={'axis': {'range': [0, 100], 'visible': False}, 'bar': {'color': "white", 'thickness': 0}, 'steps': [{'range': [0, 25], 'color': '#ff453a'}, {'range': [25, 45], 'color': '#ff9f0a'}, {'range': [45, 55], 'color': '#ffffff'}, {'range': [55, 75], 'color': '#64d2ff'}, {'range': [75, 100], 'color': '#30d158'}], 'threshold': {'line': {'color': "white", 'width': 3}, 'thickness': 0.8, 'value': fg['score']}}))
-        fig_g.update_layout(paper_bgcolor='rgba(0,0,0,0)', margin=dict(l=5,r=5,t=20,b=0), height=90) # 마진 살짝 조정
+        fig_g.update_layout(paper_bgcolor='rgba(0,0,0,0)', margin=dict(l=5,r=5,t=20,b=0), height=90)
         st.plotly_chart(fig_g, use_container_width=True, config={'staticPlot': True})
         st.markdown(f'<div style="margin-top:-20px;"><div class="fg-score">{fg["score"]}</div><div class="fg-status">{fg["rating"]}</div></div>', unsafe_allow_html=True)
     
-    # 박스 끝
     st.markdown(f'<div class="date" style="text-align:right; margin-top:5px;">Updated: {now_str}</div></div>', unsafe_allow_html=True)
 
 # =========================================================
-# [2] FRED (기존 유지)
+# [2] FRED (글자 깨짐 및 0.00 수정)
 # =========================================================
 vix_v, vix_c = get_yahoo("^VIX")
 dxy_v, dxy_c = get_yahoo("DX-Y.NYB")
@@ -276,6 +275,8 @@ m2_val, m2_chg   = get_fred("M2SL")
 
 net_liq = "Loading"
 net_chg = 0.0
+
+# 데이터가 있으면 계산, 없으면 "-"
 if fed_val is not None and tga_val is not None and rrp_val is not None:
     fed_bil = fed_val / 1000
     net_val = fed_bil - tga_val - rrp_val
@@ -290,15 +291,16 @@ tga_s = f"{tga_val:,.2f}" if tga_val else "0.00"
 rrp_s = f"{rrp_val:,.2f}B" if rrp_val else "0.00"
 m2_s  = f"{m2_val:,.0f}" if m2_val else "0.00"
 
+# [수정] 0.00%로 나오는 경우 처리 및 포맷 통일
 if isinstance(vix_c, float): vix_c = f"{vix_c:+.2f}%"
 
 with col_fred:
     left = [
         ("Fear & Greed", str(fg['score']), "Live"),
-        ("VIX", vix_v, f"{vix_c}%" if isinstance(vix_c, float) else vix_c),
-        ("DXY (ICE)", dxy_v, f"{dxy_c}%" if isinstance(dxy_c, float) else dxy_c),
-        ("US 2Y", us2_v, f"{us2_c}%" if isinstance(us2_c, float) else us2_c),
-        ("US 10Y", us10_v, f"{us10_c}%" if isinstance(us10_c, float) else us10_c),
+        ("VIX", vix_v, vix_c),
+        ("DXY (ICE)", dxy_v, dxy_c),
+        ("US 2Y", us2_v, us2_c),
+        ("US 10Y", us10_v, us10_c),
         ("Stress Index", "-0.68", "+0.03"), 
         ("M2 Supply", m2_s, m2_chg)
     ]
@@ -317,7 +319,7 @@ with col_fred:
     st.markdown(f'<div class="widget-box"><div class="header-row"><span class="title">FRED</span><span class="date">{now_str}</span></div><div class="data-grid"><div class="col">{l_html}</div><div class="col">{r_html}</div></div></div>', unsafe_allow_html=True)
 
 # =========================================================
-# [3] INDEXerGO (기존 유지)
+# [3] INDEXerGO (기존 정상 작동 코드)
 # =========================================================
 with col_idx:
     krw_v, krw_c = get_yahoo("KRW=X")
