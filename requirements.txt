@@ -2,3 +2,6 @@ streamlit
 plotly
 yfinance
 pandas
+requests
+beautifulsoup4
+fake-useragent
