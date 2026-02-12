@@ -2,208 +2,154 @@ import streamlit as st
 import plotly.graph_objects as go
 import yfinance as yf
 import pandas as pd
+import requests
+import re
 from datetime import datetime
 
-# 1. 페이지 설정 (여백 0, 와이드 모드)
+# 1. 페이지 설정
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 
 # ---------------------------------------------------------
-# 2. CSS 스타일 (아이폰 위젯 100% 맞춤 디자인)
+# 2. CSS 스타일
 # ---------------------------------------------------------
 style_css = """
 <style>
-    /* 전체 배경: 리얼 블랙 */
     .stApp { background-color: #000000 !important; }
-    header, footer, #MainMenu { visibility: hidden; }
+    header, footer { visibility: hidden; }
+    .block-container { padding: 10px !important; max-width: 100% !important; }
     
-    /* 컨테이너 여백 제거 */
-    .block-container {
-        padding: 10px !important; /* 약간의 여백 추가 */
-        max-width: 100% !important;
-    }
-
-    /* 위젯 박스 공통 스타일 */
     .widget-box {
-        background-color: #1c1c1e; /* 아이폰 다크모드 카드색 */
+        background-color: #1c1c1e;
         border-radius: 22px;
         padding: 14px 16px;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        /* height: 100vh;  <-- 기존: 화면 꽉 채우기 (삭제) */
-        height: auto;   /* 변경: 내용에 맞게 늘어남 */
-        min-height: 320px; /* 최소 높이 설정 */
+        font-family: -apple-system, sans-serif;
+        height: auto;
+        min-height: 320px;
         box-sizing: border-box;
         display: flex;
         flex-direction: column;
-        margin-bottom: 20px; /* 위젯 간 간격 */
+        margin-bottom: 20px;
     }
-
-    /* 헤더 (제목 + 날짜) */
-    .header-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-end;
-        margin-bottom: 10px;
-        height: 24px;
-    }
-    .title {
-        color: white;
-        font-size: 17px;
-        font-weight: 700;
-        letter-spacing: -0.3px;
-    }
-    .date {
-        color: #8e8e93;
-        font-size: 11px;
-        font-weight: 400;
-        margin-bottom: 2px;
-    }
-
-    /* 2열 그리드 레이아웃 */
-    .data-grid {
-        display: flex;
-        flex-direction: row;
-        gap: 12px; /* 좌우 컬럼 간격 */
-        flex: 1;
-    }
-    .col {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        justify-content: flex-start;
-        gap: 4px; /* 데이터 행 사이 간격 (아주 촘촘하게) */
-    }
-
-    /* 데이터 행 디자인 */
-    .data-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        width: 100%;
-        min-height: 18px;
-    }
-
-    /* 라벨 (왼쪽) */
-    .lbl {
-        color: #b0b0b0;
-        font-size: 13px;
-        font-weight: 500;
-        white-space: nowrap;
-    }
-
-    /* 값 그룹 (오른쪽) */
-    .val-group {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-    }
-    .chg {
-        font-size: 12px;
-        font-weight: 600;
-    }
-    .val {
-        color: white;
-        font-size: 14px;
-        font-weight: 700;
-        text-align: right;
-        min-width: 45px;
-        letter-spacing: -0.3px;
-    }
-
-    /* 색상표 (한국 주식 스타일: 상승=빨강) */
+    
+    .header-row { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; height: 24px; }
+    .title { color: white; font-size: 17px; font-weight: 700; }
+    .date { color: #8e8e93; font-size: 11px; font-weight: 400; margin-bottom: 2px; }
+    
+    .data-grid { display: flex; flex-direction: row; gap: 12px; flex: 1; }
+    .col { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+    
+    .data-row { display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 18px; }
+    .lbl { color: #b0b0b0; font-size: 13px; font-weight: 500; }
+    .val-group { display: flex; align-items: center; gap: 6px; }
+    .chg { font-size: 12px; font-weight: 600; }
+    .val { color: white; font-size: 14px; font-weight: 700; text-align: right; min-width: 45px; }
+    
     .up { color: #ff453a; }
     .down { color: #0a84ff; }
     .neutral { color: #8e8e93; }
-
-    /* F&G 전용 스타일 */
-    .fg-score {
-        font-size: 26px;
-        font-weight: 800;
-        color: white;
-        text-align: center;
-        line-height: 1;
-    }
-    .fg-status {
-        font-size: 13px;
-        font-weight: 600;
-        color: #e0e0e0;
-        text-align: center;
-        margin-top: 2px;
-    }
+    
+    .fg-score { font-size: 26px; font-weight: 800; color: white; text-align: center; line-height: 1; }
+    .fg-status { font-size: 13px; font-weight: 600; color: #e0e0e0; text-align: center; margin-top: 2px; }
 </style>
 """
 st.markdown(style_css, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 3. 실시간 데이터 가져오기 (yfinance)
+# 3. 데이터 가져오기 함수들
 # ---------------------------------------------------------
-@st.cache_data(ttl=60) # 1분마다 갱신
+
+# [핵심] CNN Fear & Greed Index 실시간 크롤링
+@st.cache_data(ttl=300) # 5분마다 갱신
+def get_fear_greed_live():
+    # 기본값 (실패 시 사용)
+    default_data = {"score": 50, "rating": "Neutral", "history": [50]*7}
+    
+    try:
+        # CNN 데이터 API 엔드포인트
+        url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Referer": "https://www.cnn.com/"
+        }
+        
+        r = requests.get(url, headers=headers, timeout=5)
+        if r.status_code == 200:
+            data = r.json()
+            fg_data = data['fear_and_greed_historical']['data']
+            
+            # 최신 데이터 가져오기
+            latest = fg_data[-1]
+            score = int(latest['y'])
+            rating = latest['rating'].capitalize() # e.g., "Greed"
+            
+            # 그래프용 과거 데이터 (최근 21개)
+            history = [int(d['y']) for d in fg_data[-21:]]
+            
+            return {"score": score, "rating": rating, "history": history}
+    except Exception as e:
+        print(f"CNN Fetch Error: {e}")
+    
+    return default_data
+
+# 야후 파이낸스 데이터
+@st.cache_data(ttl=60)
 def get_live_data(ticker):
     try:
         t = yf.Ticker(ticker)
         hist = t.history(period="2d")
         if len(hist) < 2: return "-", "0.00%"
-        
         curr = hist['Close'].iloc[-1]
         prev = hist['Close'].iloc[-2]
         change_pct = ((curr - prev) / prev) * 100
         
-        # 값 포맷팅
         if curr >= 1000: val_str = f"{curr:,.0f}"
-        elif curr < 1: val_str = f"{curr:,.3f}" # 1보다 작으면 소수점 3자리
+        elif curr < 1: val_str = f"{curr:,.3f}"
         else: val_str = f"{curr:,.2f}"
             
         return val_str, f"{change_pct:+.2f}%"
     except:
         return "Err", "0.00%"
 
-# HTML 행 생성 함수
 def make_row(label, value, change):
     if "+" in change: color = "up"
     elif "-" in change: color = "down"
     else: color = "neutral"
-    
-    return f"""
-    <div class="data-row">
-        <span class="lbl">{label}</span>
-        <div class="val-group">
-            <span class="chg {color}">{change}</span>
-            <span class="val">{value}</span>
-        </div>
-    </div>
-    """
+    return f'<div class="data-row"><span class="lbl">{label}</span><div class="val-group"><span class="chg {color}">{change}</span><span class="val">{value}</span></div></div>'
+
+# 날짜 시간
+current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 # ---------------------------------------------------------
-# 4. 화면 구성 (3열 배치)
+# 4. 화면 구성
 # ---------------------------------------------------------
-# 3개의 컬럼 생성 (반응형: PC에선 가로, 모바일에선 세로)
 col_fg, col_fred, col_idx = st.columns(3)
 
-# =========================================================
-# [1] Fear & Greed Index (첫 번째 컬럼)
-# =========================================================
+# [1] Fear & Greed Index (실시간 데이터 적용)
+fg_data = get_fear_greed_live() # 여기서 51을 가져옵니다!
+score = fg_data['score']
+rating = fg_data['rating']
+history = fg_data['history']
+
 with col_fg:
     st.markdown("""
     <div class="widget-box" style="justify-content: center;">
         <div class="header-row" style="margin-bottom:0;">
             <span class="title">Fear & Greed Index</span>
-            <span class="date">(Last 3 months)</span>
+            <span class="date">(Last 3 weeks)</span>
         </div>
     """, unsafe_allow_html=True)
     
-    # 내부 컬럼 나누기
     c1, c2 = st.columns([1.8, 1])
-    
     with c1:
-        # 꺾은선 그래프
-        base_y = [50,48,42,35,30,25,20,25,30,40,45,50,55,60,65,62,58,55,52,50,49]
+        # 실시간 히스토리로 그래프 그리기
         fig = go.Figure(go.Scatter(
-            y=base_y, mode='lines', 
+            y=history, mode='lines', 
             line=dict(color='#e0e0e0', width=2), 
             fill='tozeroy', fillcolor='rgba(255,255,255,0.05)'
         ))
         fig.update_layout(
             paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(l=0, r=0, t=10, b=10),
+            margin=dict(l=0, r=0, t=0, b=0),
             xaxis=dict(visible=False), 
             yaxis=dict(visible=True, range=[0, 100], showgrid=True, gridcolor='#333', tickfont=dict(size=9, color='#666')),
             height=110
@@ -211,9 +157,9 @@ with col_fg:
         st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True})
 
     with c2:
-        # 반원 게이지
+        # 실시간 점수로 게이지 그리기
         fig_g = go.Figure(go.Indicator(
-            mode="gauge", value=49,
+            mode="gauge", value=score, # <--- 여기가 핵심! (51)
             gauge={
                 'axis': {'range': [0, 100], 'visible': False},
                 'bar': {'color': "white", 'thickness': 0},
@@ -224,77 +170,38 @@ with col_fg:
                     {'range': [55, 75], 'color': '#64d2ff'},
                     {'range': [75, 100], 'color': '#30d158'}
                 ],
-                'threshold': {'line': {'color': "white", 'width': 3}, 'thickness': 0.8, 'value': 49}
+                'threshold': {'line': {'color': "white", 'width': 3}, 'thickness': 0.8, 'value': score}
             }
         ))
         fig_g.update_layout(paper_bgcolor='rgba(0,0,0,0)', margin=dict(l=5,r=5,t=5,b=0), height=90)
         st.plotly_chart(fig_g, use_container_width=True, config={'staticPlot': True})
         
-        st.markdown("""
+        st.markdown(f"""
         <div style="margin-top: -20px;">
-            <div class="fg-score">49</div>
-            <div class="fg-status">Neutral</div>
+            <div class="fg-score">{score}</div>
+            <div class="fg-status">{rating}</div>
         </div>
         """, unsafe_allow_html=True)
     
-    # 1. 현재 날짜와 시간 포맷팅
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
-    # 2. Updated 부분에 현재 시간 적용
     st.markdown(f'<div class="date" style="text-align:right; margin-top:5px;">Updated: {current_time}</div></div>', unsafe_allow_html=True)
 
-
-# =========================================================
-# [2] FRED (두 번째 컬럼)
-# =========================================================
+# [2] FRED
 with col_fred:
-    # 실시간 데이터 호출
     vix_v, vix_c = get_live_data("^VIX")
     dxy_v, dxy_c = get_live_data("DX-Y.NYB")
     us10y_v, us10y_c = get_live_data("^TNX")
     us2y_v, us2y_c = get_live_data("^IRX")
 
-    left = [
-        ("Fear & Greed", "49", "Neutral"),
-        ("VIX", vix_v, vix_c),
-        ("DXY (ICE)", dxy_v, dxy_c),
-        ("US 2Y", us2y_v, us2y_c),
-        ("US 10Y", us10y_v, us10y_c),
-        ("Stress Index", "-0.68", "+0.03"),
-        ("M2 Supply", "22,411", "+88.90")
-    ]
-    right = [
-        ("Fed Balance", "6605.91", "+18.34"),
-        ("TGA (Est)", "908.77", "-14.27"),
-        ("ON RRP", "1.31B", "-1.81"),
-        ("Repo Ops", "0.01B", "+0.01"),
-        ("SOFR", "3.63%", "-"),
-        ("MMF Total", "7,774", "+292.82"),
-        ("Net Liquidity", "5697.13", "+32.61")
-    ]
+    left = [("Fear & Greed", str(score), "Live"), ("VIX", vix_v, vix_c), ("DXY (ICE)", dxy_v, dxy_c), ("US 2Y", us2y_v, us2y_c), ("US 10Y", us10y_v, us10y_c), ("Stress Index", "-0.68", "+0.03"), ("M2 Supply", "22,411", "+88.90")]
+    right = [("Fed Balance", "6605.91", "+18.34"), ("TGA (Est)", "908.77", "-14.27"), ("ON RRP", "1.31B", "-1.81"), ("Repo Ops", "0.01B", "+0.01"), ("SOFR", "3.63%", "-"), ("MMF Total", "7,774", "+292.82"), ("Net Liquidity", "5697.13", "+32.61")]
     
-    l_html = "".join([make_row(l, v, c) for l, v, c in left])
-    r_html = "".join([make_row(l, v, c) for l, v, c in right])
+    l_html = "".join([make_row(*x) for x in left])
+    r_html = "".join([make_row(*x) for x in right])
 
-    # 3. FRED 위젯 Live Data 부분을 현재 시간으로 변경
-    st.markdown(f"""
-    <div class="widget-box">
-        <div class="header-row">
-            <span class="title">FRED</span>
-            <span class="date">{current_time}</span>
-        </div>
-        <div class="data-grid">
-            <div class="col">{l_html}</div>
-            <div class="col">{r_html}</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"""<div class="widget-box"><div class="header-row"><span class="title">FRED</span><span class="date">{current_time}</span></div><div class="data-grid"><div class="col">{l_html}</div><div class="col">{r_html}</div></div></div>""", unsafe_allow_html=True)
 
-
-# =========================================================
-# [3] INDEXerGO (세 번째 컬럼)
-# =========================================================
+# [3] INDEXerGO
 with col_idx:
-    # 실시간 데이터 호출
     krw_v, krw_c = get_live_data("KRW=X")
     gold_v, gold_c = get_live_data("GC=F")
     silver_v, silver_c = get_live_data("SI=F")
@@ -304,32 +211,10 @@ with col_idx:
     gas_v, gas_c = get_live_data("NG=F")
     dxy_v, dxy_c = get_live_data("DX-Y.NYB")
 
-    left = [
-        ("달러인덱스", dxy_v, dxy_c),
-        ("원/달러", krw_v, krw_c),
-        ("금 (Gold)", gold_v, gold_c),
-        ("은 (Silver)", silver_v, silver_c)
-    ]
-    right = [
-        ("비트코인", btc_v, btc_c),
-        ("이더리움", eth_v, eth_c),
-        ("WTI유", wti_v, wti_c),
-        ("천연가스", gas_v, gas_c)
-    ]
+    left = [("달러인덱스", dxy_v, dxy_c), ("원/달러", krw_v, krw_c), ("금 (Gold)", gold_v, gold_c), ("은 (Silver)", silver_v, silver_c)]
+    right = [("비트코인", btc_v, btc_c), ("이더리움", eth_v, eth_c), ("WTI유", wti_v, wti_c), ("천연가스", gas_v, gas_c)]
     
-    l_html = "".join([make_row(l, v, c) for l, v, c in left])
-    r_html = "".join([make_row(l, v, c) for l, v, c in right])
+    l_html = "".join([make_row(*x) for x in left])
+    r_html = "".join([make_row(*x) for x in right])
 
-    # 4. INDEXerGO 위젯 Live Data 부분을 현재 시간으로 변경
-    st.markdown(f"""
-    <div class="widget-box">
-        <div class="header-row">
-            <span class="title">INDEXerGO</span>
-            <span class="date">{current_time}</span>
-        </div>
-        <div class="data-grid">
-            <div class="col">{l_html}</div>
-            <div class="col">{r_html}</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"""<div class="widget-box"><div class="header-row"><span class="title">INDEXerGO</span><span class="date">{current_time}</span></div><div class="data-grid"><div class="col">{l_html}</div><div class="col">{r_html}</div></div></div>""", unsafe_allow_html=True)
