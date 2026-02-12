@@ -18,7 +18,7 @@ style_css = """
     
     /* 컨테이너 여백 제거 */
     .block-container {
-        padding: 0px !important;
+        padding: 10px !important; /* 약간의 여백 추가 */
         max-width: 100% !important;
     }
 
@@ -28,10 +28,13 @@ style_css = """
         border-radius: 22px;
         padding: 14px 16px;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        height: 100vh; /* 화면 꽉 채우기 */
+        /* height: 100vh;  <-- 기존: 화면 꽉 채우기 (삭제) */
+        height: auto;   /* 변경: 내용에 맞게 늘어남 */
+        min-height: 320px; /* 최소 높이 설정 */
         box-sizing: border-box;
         display: flex;
         flex-direction: column;
+        margin-bottom: 20px; /* 위젯 간 간격 */
     }
 
     /* 헤더 (제목 + 날짜) */
@@ -170,14 +173,15 @@ def make_row(label, value, change):
     """
 
 # ---------------------------------------------------------
-# 4. 뷰(View) 라우팅
+# 4. 화면 구성 (3열 배치)
 # ---------------------------------------------------------
-view_mode = st.query_params.get("view", "fred")
+# 3개의 컬럼 생성 (반응형: PC에선 가로, 모바일에선 세로)
+col_fg, col_fred, col_idx = st.columns(3)
 
 # =========================================================
-# [1] Fear & Greed Index (왼쪽 차트 + 오른쪽 게이지)
+# [1] Fear & Greed Index (첫 번째 컬럼)
 # =========================================================
-if view_mode == "fg":
+with col_fg:
     st.markdown("""
     <div class="widget-box" style="justify-content: center;">
         <div class="header-row" style="margin-bottom:0;">
@@ -186,13 +190,12 @@ if view_mode == "fg":
         </div>
     """, unsafe_allow_html=True)
     
+    # 내부 컬럼 나누기
     c1, c2 = st.columns([1.8, 1])
     
     with c1:
-        # 꺾은선 그래프 (디자인용 모의 데이터 + 약간의 랜덤성)
+        # 꺾은선 그래프
         base_y = [50,48,42,35,30,25,20,25,30,40,45,50,55,60,65,62,58,55,52,50,49]
-        # 실제로는 API가 없어서 고정 패턴 사용 (사진과 동일하게)
-        
         fig = go.Figure(go.Scatter(
             y=base_y, mode='lines', 
             line=dict(color='#e0e0e0', width=2), 
@@ -213,13 +216,13 @@ if view_mode == "fg":
             mode="gauge", value=49,
             gauge={
                 'axis': {'range': [0, 100], 'visible': False},
-                'bar': {'color': "white", 'thickness': 0}, # 바늘 숨김(숫자로 대체)
+                'bar': {'color': "white", 'thickness': 0},
                 'steps': [
-                    {'range': [0, 25], 'color': '#ff453a'}, # 공포
+                    {'range': [0, 25], 'color': '#ff453a'},
                     {'range': [25, 45], 'color': '#ff9f0a'},
-                    {'range': [45, 55], 'color': '#ffffff'}, # 중립
+                    {'range': [45, 55], 'color': '#ffffff'},
                     {'range': [55, 75], 'color': '#64d2ff'},
-                    {'range': [75, 100], 'color': '#30d158'} # 탐욕
+                    {'range': [75, 100], 'color': '#30d158'}
                 ],
                 'threshold': {'line': {'color': "white", 'width': 3}, 'thickness': 0.8, 'value': 49}
             }
@@ -238,24 +241,23 @@ if view_mode == "fg":
 
 
 # =========================================================
-# [2] FRED (VIX, DXY, 금리 등)
+# [2] FRED (두 번째 컬럼)
 # =========================================================
-elif view_mode == "fred":
-    # 실시간 데이터
+with col_fred:
+    # 실시간 데이터 호출
     vix_v, vix_c = get_live_data("^VIX")
     dxy_v, dxy_c = get_live_data("DX-Y.NYB")
     us10y_v, us10y_c = get_live_data("^TNX")
     us2y_v, us2y_c = get_live_data("^IRX")
 
-    # 데이터 배치
     left = [
-        ("Fear & Greed", "49", "Neutral"), # 고정값
+        ("Fear & Greed", "49", "Neutral"),
         ("VIX", vix_v, vix_c),
         ("DXY (ICE)", dxy_v, dxy_c),
         ("US 2Y", us2y_v, us2y_c),
         ("US 10Y", us10y_v, us10y_c),
-        ("Stress Index", "-0.68", "+0.03"), # 고정값
-        ("M2 Supply", "22,411", "+88.90")   # 고정값
+        ("Stress Index", "-0.68", "+0.03"),
+        ("M2 Supply", "22,411", "+88.90")
     ]
     right = [
         ("Fed Balance", "6605.91", "+18.34"),
@@ -267,7 +269,6 @@ elif view_mode == "fred":
         ("Net Liquidity", "5697.13", "+32.61")
     ]
     
-    # HTML 렌더링
     l_html = "".join([make_row(l, v, c) for l, v, c in left])
     r_html = "".join([make_row(l, v, c) for l, v, c in right])
 
@@ -286,10 +287,10 @@ elif view_mode == "fred":
 
 
 # =========================================================
-# [3] INDEXerGO (코인, 환율, 원자재)
+# [3] INDEXerGO (세 번째 컬럼)
 # =========================================================
-elif view_mode == "idx":
-    # 실시간 데이터
+with col_idx:
+    # 실시간 데이터 호출
     krw_v, krw_c = get_live_data("KRW=X")
     gold_v, gold_c = get_live_data("GC=F")
     silver_v, silver_c = get_live_data("SI=F")
