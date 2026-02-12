@@ -2,7 +2,7 @@ import streamlit as st
 import plotly.graph_objects as go
 import yfinance as yf
 import pandas as pd
-import random
+from datetime import datetime
 
 # 1. 페이지 설정 (여백 0, 와이드 모드)
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
@@ -236,8 +236,11 @@ with col_fg:
             <div class="fg-status">Neutral</div>
         </div>
         """, unsafe_allow_html=True)
-        
-    st.markdown('<div class="date" style="text-align:right; margin-top:5px;">Updated: 2026-02-10</div></div>', unsafe_allow_html=True)
+    
+    # 1. 현재 날짜와 시간 포맷팅
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+    # 2. Updated 부분에 현재 시간 적용
+    st.markdown(f'<div class="date" style="text-align:right; margin-top:5px;">Updated: {current_time}</div></div>', unsafe_allow_html=True)
 
 
 # =========================================================
@@ -272,11 +275,12 @@ with col_fred:
     l_html = "".join([make_row(l, v, c) for l, v, c in left])
     r_html = "".join([make_row(l, v, c) for l, v, c in right])
 
+    # 3. FRED 위젯 Live Data 부분을 현재 시간으로 변경
     st.markdown(f"""
     <div class="widget-box">
         <div class="header-row">
             <span class="title">FRED</span>
-            <span class="date">Live Data</span>
+            <span class="date">{current_time}</span>
         </div>
         <div class="data-grid">
             <div class="col">{l_html}</div>
@@ -316,11 +320,12 @@ with col_idx:
     l_html = "".join([make_row(l, v, c) for l, v, c in left])
     r_html = "".join([make_row(l, v, c) for l, v, c in right])
 
+    # 4. INDEXerGO 위젯 Live Data 부분을 현재 시간으로 변경
     st.markdown(f"""
     <div class="widget-box">
         <div class="header-row">
             <span class="title">INDEXerGO</span>
-            <span class="date">Live Data</span>
+            <span class="date">{current_time}</span>
         </div>
         <div class="data-grid">
             <div class="col">{l_html}</div>
