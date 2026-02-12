@@ -4,13 +4,14 @@ import yfinance as yf
 import pandas as pd
 import requests
 import io
+import re
 from datetime import datetime
 
 # 1. 페이지 설정 (여백 0, 와이드 모드)
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 
 # ---------------------------------------------------------
-# 2. CSS 스타일 (박스 높이 및 디자인 원복)
+# 2. CSS 스타일 (디자인 유지)
 # ---------------------------------------------------------
 style_css = """
 <style>
@@ -26,11 +27,11 @@ style_css = """
 
     /* 위젯 박스 공통 스타일 */
     .widget-box {
-        background-color: #1c1c1e; /* 아이폰 다크모드 카드색 */
+        background-color: #1c1c1e;
         border-radius: 22px;
         padding: 14px 16px;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        height: auto; /* 높이 자동 조절 (여백 제거됨) */
+        height: auto;
         box-sizing: border-box;
         display: flex;
         flex-direction: column;
@@ -122,7 +123,7 @@ style_css = """
 st.markdown(style_css, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 3. 데이터 엔진
+# 3. 데이터 엔진 (강력한 차단 우회 적용)
 # ---------------------------------------------------------
 
 # (1) Fear & Greed (CNN)
@@ -145,7 +146,7 @@ def get_fg_index():
     except:
         return {"score": 50, "rating": "Neutral", "history": [50]*21}
 
-# (2) 야후 파이낸스 (데이터 깨짐 방지 포맷팅 추가)
+# (2) 야후 파이낸스 (데이터 포맷팅 강화)
 @st.cache_data(ttl=60)
 def get_yahoo(ticker):
     try:
@@ -161,21 +162,26 @@ def get_yahoo(ticker):
         elif curr < 1: val = f"{curr:,.3f}"
         else: val = f"{curr:,.2f}"
         
-        # [수정] 소수점 둘째 자리까지 강제 포맷팅하여 긴 숫자 방지
+        # [중요] 소수점 둘째 자리까지 잘라서 긴 숫자 방지
         return val, f"{pct:+.2f}%"
     except:
         return "-", "0.00%"
 
-# (3) FRED 데이터 (차단 방지 유지)
+# (3) FRED 데이터 (2중 백업 로직 적용: CSV 실패시 HTML 스캔)
 @st.cache_data(ttl=3600) 
 def get_fred(series_id):
+    # 진짜 브라우저처럼 보이기 위한 헤더
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://fred.stlouisfed.org/"
+    }
+    
+    # [방법 1] CSV 다운로드 시도 (과거 데이터 비교 가능)
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-        url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}&sort_order=desc&limit=2"
-        
-        r = requests.get(url, headers=headers, timeout=10)
+        url_csv = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}&sort_order=desc&limit=2"
+        r = requests.get(url_csv, headers=headers, timeout=5)
         
         if r.status_code == 200:
             df = pd.read_csv(io.StringIO(r.text))
@@ -186,21 +192,35 @@ def get_fred(series_id):
                     prev = df.iloc[1, 1]
                     chg_val = val - prev
                 return val, chg_val
-    except Exception as e:
+    except:
         pass
+
+    # [방법 2] 실패 시 HTML 직접 스캔 (최신 값이라도 건지기 위함)
+    try:
+        url_html = f"https://fred.stlouisfed.org/series/{series_id}"
+        r = requests.get(url_html, headers=headers, timeout=5)
+        if r.status_code == 200:
+            # 정규표현식으로 숫자 찾기 <span class="series-meta-observation-value">...</span>
+            match = re.search(r'class="series-meta-observation-value">([\d,.]+)<', r.text)
+            if match:
+                val_text = match.group(1).replace(',', '')
+                return float(val_text), 0 # 이 방식은 등락폭을 알 수 없으므로 0 처리
+    except:
+        pass
+        
     return None, 0
 
-# HTML 생성기 (포맷팅 강화)
+# HTML 생성기
 def make_row(label, value, change):
     color = "neutral"
     
-    # change가 문자열인 경우 (야후 데이터)
+    # change가 문자열인 경우 (야후)
     if isinstance(change, str):
         if "+" in change: color = "up"
         elif "-" in change and change != "-": color = "down"
         change_str = change
         
-    # change가 숫자인 경우 (FRED 데이터)
+    # change가 숫자인 경우 (FRED)
     elif isinstance(change, (int, float)):
         if change > 0: color = "up"
         elif change < 0: color = "down"
@@ -219,7 +239,7 @@ now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
 col_fg, col_fred, col_idx = st.columns(3)
 
 # =========================================================
-# [1] Fear & Greed (그래프 쳐짐 수정 유지)
+# [1] Fear & Greed (디자인 유지)
 # =========================================================
 fg = get_fg_index()
 
@@ -261,7 +281,7 @@ with col_fg:
     st.markdown(f'<div class="date" style="text-align:right; margin-top:5px;">Updated: {now_str}</div></div>', unsafe_allow_html=True)
 
 # =========================================================
-# [2] FRED (글자 깨짐 및 0.00 수정)
+# [2] FRED (데이터 복구 및 포맷팅 수정)
 # =========================================================
 vix_v, vix_c = get_yahoo("^VIX")
 dxy_v, dxy_c = get_yahoo("DX-Y.NYB")
@@ -276,7 +296,7 @@ m2_val, m2_chg   = get_fred("M2SL")
 net_liq = "Loading"
 net_chg = 0.0
 
-# 데이터가 있으면 계산, 없으면 "-"
+# Net Liquidity 계산 (데이터가 하나라도 있으면 계산)
 if fed_val is not None and tga_val is not None and rrp_val is not None:
     fed_bil = fed_val / 1000
     net_val = fed_bil - tga_val - rrp_val
@@ -291,7 +311,7 @@ tga_s = f"{tga_val:,.2f}" if tga_val else "0.00"
 rrp_s = f"{rrp_val:,.2f}B" if rrp_val else "0.00"
 m2_s  = f"{m2_val:,.0f}" if m2_val else "0.00"
 
-# [수정] 0.00%로 나오는 경우 처리 및 포맷 통일
+# VIX 포맷팅 (혹시 실수형으로 올 경우 대비)
 if isinstance(vix_c, float): vix_c = f"{vix_c:+.2f}%"
 
 with col_fred:
@@ -319,7 +339,7 @@ with col_fred:
     st.markdown(f'<div class="widget-box"><div class="header-row"><span class="title">FRED</span><span class="date">{now_str}</span></div><div class="data-grid"><div class="col">{l_html}</div><div class="col">{r_html}</div></div></div>', unsafe_allow_html=True)
 
 # =========================================================
-# [3] INDEXerGO (기존 정상 작동 코드)
+# [3] INDEXerGO (정상)
 # =========================================================
 with col_idx:
     krw_v, krw_c = get_yahoo("KRW=X")
