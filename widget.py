@@ -3,6 +3,7 @@ import plotly.graph_objects as go
 import yfinance as yf
 import pandas as pd
 import random
+from datetime import datetime # 1. 날짜/시간 표시를 위한 모듈 임포트
 
 # 1. 페이지 설정 (여백 0, 와이드 모드)
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
@@ -42,7 +43,7 @@ style_css = """
         display: flex;
         justify-content: space-between;
         align-items: flex-end;
-        margin-bottom: 10px;
+        margin-bottom: 2px; /* 2. 그래프와 간격을 줄이기 위해 마진 감소 (10px -> 2px) */
         height: 24px;
     }
     .title {
@@ -172,159 +173,160 @@ def make_row(label, value, change):
     </div>
     """
 
+# 3. 현재 날짜와 시간 가져오기
+now = datetime.now()
+current_time_str = now.strftime("%Y-%m-%d %H:%M")
+
 # ---------------------------------------------------------
-# 4. 화면 구성 (3열 배치)
+# 4. 화면 구성 (세로 배치)
 # ---------------------------------------------------------
-# 3개의 컬럼 생성 (반응형: PC에선 가로, 모바일에선 세로)
-col_fg, col_fred, col_idx = st.columns(3)
+# 4. st.columns(3) 제거하여 세로로 배치되도록 변경
 
 # =========================================================
-# [1] Fear & Greed Index (첫 번째 컬럼)
+# [1] Fear & Greed Index (첫 번째 위젯)
 # =========================================================
-with col_fg:
+st.markdown("""
+<div class="widget-box" style="justify-content: center;">
+    <div class="header-row" style="margin-bottom:0;">
+        <span class="title">Fear & Greed Index</span>
+        <span class="date">(Last 3 months)</span>
+    </div>
+""", unsafe_allow_html=True)
+
+# 내부 컬럼 나누기
+c1, c2 = st.columns([1.8, 1])
+
+with c1:
+    # 꺾은선 그래프
+    base_y = [50,48,42,35,30,25,20,25,30,40,45,50,55,60,65,62,58,55,52,50,49]
+    fig = go.Figure(go.Scatter(
+        y=base_y, mode='lines', 
+        line=dict(color='#e0e0e0', width=2), 
+        fill='tozeroy', fillcolor='rgba(255,255,255,0.05)'
+    ))
+    fig.update_layout(
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        # 5. 그래프 위치 상향 조정을 위해 상하 마진 제거 (t=10, b=10 -> t=0, b=0)
+        margin=dict(l=0, r=0, t=0, b=0),
+        xaxis=dict(visible=False), 
+        yaxis=dict(visible=True, range=[0, 100], showgrid=True, gridcolor='#333', tickfont=dict(size=9, color='#666')),
+        height=110
+    )
+    st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True})
+
+with c2:
+    # 반원 게이지
+    fig_g = go.Figure(go.Indicator(
+        mode="gauge", value=49,
+        gauge={
+            'axis': {'range': [0, 100], 'visible': False},
+            'bar': {'color': "white", 'thickness': 0},
+            'steps': [
+                {'range': [0, 25], 'color': '#ff453a'},
+                {'range': [25, 45], 'color': '#ff9f0a'},
+                {'range': [45, 55], 'color': '#ffffff'},
+                {'range': [55, 75], 'color': '#64d2ff'},
+                {'range': [75, 100], 'color': '#30d158'}
+            ],
+            'threshold': {'line': {'color': "white", 'width': 3}, 'thickness': 0.8, 'value': 49}
+        }
+    ))
+    fig_g.update_layout(paper_bgcolor='rgba(0,0,0,0)', margin=dict(l=5,r=5,t=5,b=0), height=90)
+    st.plotly_chart(fig_g, use_container_width=True, config={'staticPlot': True})
+    
     st.markdown("""
-    <div class="widget-box" style="justify-content: center;">
-        <div class="header-row" style="margin-bottom:0;">
-            <span class="title">Fear & Greed Index</span>
-            <span class="date">(Last 3 months)</span>
-        </div>
-    """, unsafe_allow_html=True)
-    
-    # 내부 컬럼 나누기
-    c1, c2 = st.columns([1.8, 1])
-    
-    with c1:
-        # 꺾은선 그래프
-        base_y = [50,48,42,35,30,25,20,25,30,40,45,50,55,60,65,62,58,55,52,50,49]
-        fig = go.Figure(go.Scatter(
-            y=base_y, mode='lines', 
-            line=dict(color='#e0e0e0', width=2), 
-            fill='tozeroy', fillcolor='rgba(255,255,255,0.05)'
-        ))
-        fig.update_layout(
-            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(l=0, r=0, t=10, b=10),
-            xaxis=dict(visible=False), 
-            yaxis=dict(visible=True, range=[0, 100], showgrid=True, gridcolor='#333', tickfont=dict(size=9, color='#666')),
-            height=110
-        )
-        st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True})
-
-    with c2:
-        # 반원 게이지
-        fig_g = go.Figure(go.Indicator(
-            mode="gauge", value=49,
-            gauge={
-                'axis': {'range': [0, 100], 'visible': False},
-                'bar': {'color': "white", 'thickness': 0},
-                'steps': [
-                    {'range': [0, 25], 'color': '#ff453a'},
-                    {'range': [25, 45], 'color': '#ff9f0a'},
-                    {'range': [45, 55], 'color': '#ffffff'},
-                    {'range': [55, 75], 'color': '#64d2ff'},
-                    {'range': [75, 100], 'color': '#30d158'}
-                ],
-                'threshold': {'line': {'color': "white", 'width': 3}, 'thickness': 0.8, 'value': 49}
-            }
-        ))
-        fig_g.update_layout(paper_bgcolor='rgba(0,0,0,0)', margin=dict(l=5,r=5,t=5,b=0), height=90)
-        st.plotly_chart(fig_g, use_container_width=True, config={'staticPlot': True})
-        
-        st.markdown("""
-        <div style="margin-top: -20px;">
-            <div class="fg-score">49</div>
-            <div class="fg-status">Neutral</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-    st.markdown('<div class="date" style="text-align:right; margin-top:5px;">Updated: 2026-02-10</div></div>', unsafe_allow_html=True)
-
-
-# =========================================================
-# [2] FRED (두 번째 컬럼)
-# =========================================================
-with col_fred:
-    # 실시간 데이터 호출
-    vix_v, vix_c = get_live_data("^VIX")
-    dxy_v, dxy_c = get_live_data("DX-Y.NYB")
-    us10y_v, us10y_c = get_live_data("^TNX")
-    us2y_v, us2y_c = get_live_data("^IRX")
-
-    left = [
-        ("Fear & Greed", "49", "Neutral"),
-        ("VIX", vix_v, vix_c),
-        ("DXY (ICE)", dxy_v, dxy_c),
-        ("US 2Y", us2y_v, us2y_c),
-        ("US 10Y", us10y_v, us10y_c),
-        ("Stress Index", "-0.68", "+0.03"),
-        ("M2 Supply", "22,411", "+88.90")
-    ]
-    right = [
-        ("Fed Balance", "6605.91", "+18.34"),
-        ("TGA (Est)", "908.77", "-14.27"),
-        ("ON RRP", "1.31B", "-1.81"),
-        ("Repo Ops", "0.01B", "+0.01"),
-        ("SOFR", "3.63%", "-"),
-        ("MMF Total", "7,774", "+292.82"),
-        ("Net Liquidity", "5697.13", "+32.61")
-    ]
-    
-    l_html = "".join([make_row(l, v, c) for l, v, c in left])
-    r_html = "".join([make_row(l, v, c) for l, v, c in right])
-
-    st.markdown(f"""
-    <div class="widget-box">
-        <div class="header-row">
-            <span class="title">FRED</span>
-            <span class="date">Live Data</span>
-        </div>
-        <div class="data-grid">
-            <div class="col">{l_html}</div>
-            <div class="col">{r_html}</div>
-        </div>
+    <div style="margin-top: -20px;">
+        <div class="fg-score">49</div>
+        <div class="fg-status">Neutral</div>
     </div>
     """, unsafe_allow_html=True)
-
-
-# =========================================================
-# [3] INDEXerGO (세 번째 컬럼)
-# =========================================================
-with col_idx:
-    # 실시간 데이터 호출
-    krw_v, krw_c = get_live_data("KRW=X")
-    gold_v, gold_c = get_live_data("GC=F")
-    silver_v, silver_c = get_live_data("SI=F")
-    btc_v, btc_c = get_live_data("BTC-USD")
-    eth_v, eth_c = get_live_data("ETH-USD")
-    wti_v, wti_c = get_live_data("CL=F")
-    gas_v, gas_c = get_live_data("NG=F")
-    dxy_v, dxy_c = get_live_data("DX-Y.NYB")
-
-    left = [
-        ("달러인덱스", dxy_v, dxy_c),
-        ("원/달러", krw_v, krw_c),
-        ("금 (Gold)", gold_v, gold_c),
-        ("은 (Silver)", silver_v, silver_c)
-    ]
-    right = [
-        ("비트코인", btc_v, btc_c),
-        ("이더리움", eth_v, eth_c),
-        ("WTI유", wti_v, wti_c),
-        ("천연가스", gas_v, gas_c)
-    ]
     
-    l_html = "".join([make_row(l, v, c) for l, v, c in left])
-    r_html = "".join([make_row(l, v, c) for l, v, c in right])
+st.markdown('<div class="date" style="text-align:right; margin-top:5px;">Updated: 2026-02-10</div></div>', unsafe_allow_html=True)
 
-    st.markdown(f"""
-    <div class="widget-box">
-        <div class="header-row">
-            <span class="title">INDEXerGO</span>
-            <span class="date">Live Data</span>
-        </div>
-        <div class="data-grid">
-            <div class="col">{l_html}</div>
-            <div class="col">{r_html}</div>
-        </div>
+
+# =========================================================
+# [2] FRED (두 번째 위젯)
+# =========================================================
+# 실시간 데이터 호출
+vix_v, vix_c = get_live_data("^VIX")
+dxy_v, dxy_c = get_live_data("DX-Y.NYB")
+us10y_v, us10y_c = get_live_data("^TNX")
+us2y_v, us2y_c = get_live_data("^IRX")
+
+left = [
+    ("Fear & Greed", "49", "Neutral"),
+    ("VIX", vix_v, vix_c),
+    ("DXY (ICE)", dxy_v, dxy_c),
+    ("US 2Y", us2y_v, us2y_c),
+    ("US 10Y", us10y_v, us10y_c),
+    ("Stress Index", "-0.68", "+0.03"),
+    ("M2 Supply", "22,411", "+88.90")
+]
+right = [
+    ("Fed Balance", "6605.91", "+18.34"),
+    ("TGA (Est)", "908.77", "-14.27"),
+    ("ON RRP", "1.31B", "-1.81"),
+    ("Repo Ops", "0.01B", "+0.01"),
+    ("SOFR", "3.63%", "-"),
+    ("MMF Total", "7,774", "+292.82"),
+    ("Net Liquidity", "5697.13", "+32.61")
+]
+
+l_html = "".join([make_row(l, v, c) for l, v, c in left])
+r_html = "".join([make_row(l, v, c) for l, v, c in right])
+
+st.markdown(f"""
+<div class="widget-box">
+    <div class="header-row">
+        <span class="title">FRED</span>
+        <span class="date">{current_time_str}</span>
     </div>
-    """, unsafe_allow_html=True)
+    <div class="data-grid">
+        <div class="col">{l_html}</div>
+        <div class="col">{r_html}</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+
+# =========================================================
+# [3] INDEXerGO (세 번째 위젯)
+# =========================================================
+# 실시간 데이터 호출
+krw_v, krw_c = get_live_data("KRW=X")
+gold_v, gold_c = get_live_data("GC=F")
+silver_v, silver_c = get_live_data("SI=F")
+btc_v, btc_c = get_live_data("BTC-USD")
+eth_v, eth_c = get_live_data("ETH-USD")
+wti_v, wti_c = get_live_data("CL=F")
+gas_v, gas_c = get_live_data("NG=F")
+dxy_v, dxy_c = get_live_data("DX-Y.NYB")
+
+left = [
+    ("달러인덱스", dxy_v, dxy_c),
+    ("원/달러", krw_v, krw_c),
+    ("금 (Gold)", gold_v, gold_c),
+    ("은 (Silver)", silver_v, silver_c)
+]
+right = [
+    ("비트코인", btc_v, btc_c),
+    ("이더리움", eth_v, eth_c),
+    ("WTI유", wti_v, wti_c),
+    ("천연가스", gas_v, gas_c)
+]
+
+l_html = "".join([make_row(l, v, c) for l, v, c in left])
+r_html = "".join([make_row(l, v, c) for l, v, c in right])
+
+st.markdown(f"""
+<div class="widget-box">
+    <div class="header-row">
+        <span class="title">INDEXerGO</span>
+        <span class="date">{current_time_str}</span>
+    </div>
+    <div class="data-grid">
+        <div class="col">{l_html}</div>
+        <div class="col">{r_html}</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
