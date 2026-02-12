@@ -5,13 +5,13 @@ import pandas as pd
 import requests
 import io
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # 1. 페이지 설정 (여백 0, 와이드 모드)
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 
 # ---------------------------------------------------------
-# 2. CSS 스타일 (디자인 유지)
+# 2. CSS 스타일 (잘림 방지 및 디자인 복구)
 # ---------------------------------------------------------
 style_css = """
 <style>
@@ -19,7 +19,7 @@ style_css = """
     .stApp { background-color: #000000 !important; }
     header, footer, #MainMenu { visibility: hidden; }
     
-    /* 컨테이너 여백 제거 */
+    /* 컨테이너 여백 최적화 */
     .block-container {
         padding: 10px !important;
         max-width: 100% !important;
@@ -27,15 +27,16 @@ style_css = """
 
     /* 위젯 박스 공통 스타일 */
     .widget-box {
-        background-color: #1c1c1e;
+        background-color: #1c1c1e; /* 아이폰 다크모드 카드색 */
         border-radius: 22px;
-        padding: 14px 16px;
+        padding: 16px 16px 24px 16px; /* [수정] 아래쪽 여백(24px) 늘려서 잘림 방지 */
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         height: auto;
         box-sizing: border-box;
         display: flex;
         flex-direction: column;
         margin-bottom: 20px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3); /* 가독성을 위한 그림자 살짝 */
     }
 
     /* 헤더 (제목 + 날짜) */
@@ -43,12 +44,12 @@ style_css = """
         display: flex;
         justify-content: space-between;
         align-items: flex-end;
-        margin-bottom: 10px;
+        margin-bottom: 12px;
         height: 24px;
     }
     .title {
         color: white;
-        font-size: 17px;
+        font-size: 18px; /* 제목 조금 더 잘 보이게 */
         font-weight: 700;
         letter-spacing: -0.3px;
     }
@@ -63,7 +64,7 @@ style_css = """
     .data-grid {
         display: flex;
         flex-direction: row;
-        gap: 12px;
+        gap: 15px; /* 간격 살짝 넓힘 */
         flex: 1;
     }
     .col {
@@ -71,7 +72,7 @@ style_css = """
         display: flex;
         flex-direction: column;
         justify-content: flex-start;
-        gap: 4px;
+        gap: 6px; /* 행 간격 조정 */
     }
 
     /* 데이터 행 디자인 */
@@ -80,7 +81,7 @@ style_css = """
         justify-content: space-between;
         align-items: center;
         width: 100%;
-        min-height: 18px;
+        min-height: 20px;
     }
 
     /* 라벨 (왼쪽) */
@@ -106,7 +107,7 @@ style_css = """
         font-size: 14px;
         font-weight: 700;
         text-align: right;
-        min-width: 45px;
+        min-width: 50px; /* 숫자 정렬을 위해 최소 너비 확보 */
         letter-spacing: -0.3px;
     }
 
@@ -123,7 +124,7 @@ style_css = """
 st.markdown(style_css, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 3. 데이터 엔진 (강력한 차단 우회 적용)
+# 3. 데이터 엔진
 # ---------------------------------------------------------
 
 # (1) Fear & Greed (CNN)
@@ -146,7 +147,7 @@ def get_fg_index():
     except:
         return {"score": 50, "rating": "Neutral", "history": [50]*21}
 
-# (2) 야후 파이낸스 (데이터 포맷팅 강화)
+# (2) 야후 파이낸스 (소수점 폭탄 방지)
 @st.cache_data(ttl=60)
 def get_yahoo(ticker):
     try:
@@ -158,31 +159,26 @@ def get_yahoo(ticker):
         prev = hist['Close'].iloc[-2]
         pct = ((curr - prev) / prev) * 100
         
+        # 값 포맷팅
         if curr >= 1000: val = f"{curr:,.0f}"
         elif curr < 1: val = f"{curr:,.3f}"
         else: val = f"{curr:,.2f}"
         
-        # [중요] 소수점 둘째 자리까지 잘라서 긴 숫자 방지
+        # [핵심] 여기서 무조건 소수점 2자리로 잘라버림
         return val, f"{pct:+.2f}%"
     except:
         return "-", "0.00%"
 
-# (3) FRED 데이터 (2중 백업 로직 적용: CSV 실패시 HTML 스캔)
+# (3) FRED 데이터 (강력한 크롤링 + 단위 보정)
 @st.cache_data(ttl=3600) 
 def get_fred(series_id):
-    # 진짜 브라우저처럼 보이기 위한 헤더
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://fred.stlouisfed.org/"
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
-    
-    # [방법 1] CSV 다운로드 시도 (과거 데이터 비교 가능)
+    # CSV 다운로드 방식 (가장 안정적)
     try:
         url_csv = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}&sort_order=desc&limit=2"
         r = requests.get(url_csv, headers=headers, timeout=5)
-        
         if r.status_code == 200:
             df = pd.read_csv(io.StringIO(r.text))
             if len(df) >= 1:
@@ -191,39 +187,26 @@ def get_fred(series_id):
                 if len(df) >= 2:
                     prev = df.iloc[1, 1]
                     chg_val = val - prev
-                return val, chg_val
+                return float(val), float(chg_val)
     except:
         pass
+    return None, 0.0
 
-    # [방법 2] 실패 시 HTML 직접 스캔 (최신 값이라도 건지기 위함)
-    try:
-        url_html = f"https://fred.stlouisfed.org/series/{series_id}"
-        r = requests.get(url_html, headers=headers, timeout=5)
-        if r.status_code == 200:
-            # 정규표현식으로 숫자 찾기 <span class="series-meta-observation-value">...</span>
-            match = re.search(r'class="series-meta-observation-value">([\d,.]+)<', r.text)
-            if match:
-                val_text = match.group(1).replace(',', '')
-                return float(val_text), 0 # 이 방식은 등락폭을 알 수 없으므로 0 처리
-    except:
-        pass
-        
-    return None, 0
-
-# HTML 생성기
+# HTML 생성기 (안전장치 추가)
 def make_row(label, value, change):
     color = "neutral"
     
-    # change가 문자열인 경우 (야후)
+    # change가 문자열인 경우 (야후 데이터)
     if isinstance(change, str):
+        # 이미 포맷팅된 문자열이 깨지는 것을 방지하기 위해 정규식으로 체크하거나 그대로 사용
         if "+" in change: color = "up"
-        elif "-" in change and change != "-": color = "down"
+        elif "-" in change and change != "-" and "0.00" not in change: color = "down"
         change_str = change
         
-    # change가 숫자인 경우 (FRED)
+    # change가 숫자인 경우 (FRED 데이터)
     elif isinstance(change, (int, float)):
-        if change > 0: color = "up"
-        elif change < 0: color = "down"
+        if change > 0.001: color = "up"
+        elif change < -0.001: color = "down"
         sign = "+" if change > 0 else ""
         change_str = f"{sign}{change:.2f}"
     else:
@@ -231,7 +214,9 @@ def make_row(label, value, change):
 
     return f'<div class="data-row"><span class="lbl">{label}</span><div class="val-group"><span class="chg {color}">{change_str}</span><span class="val">{value}</span></div></div>'
 
-now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+# [핵심] 한국 시간 (KST) 계산
+kst_now = datetime.utcnow() + timedelta(hours=9)
+now_str = kst_now.strftime("%Y-%m-%d %H:%M")
 
 # ---------------------------------------------------------
 # 4. 화면 구성
@@ -249,8 +234,7 @@ with col_fg:
     c1, c2 = st.columns([1.8, 1])
     with c1:
         fig = go.Figure(go.Scatter(
-            y=fg['history'], 
-            mode='lines', 
+            y=fg['history'], mode='lines', 
             line=dict(color='#e0e0e0', width=2), 
             fill='tozeroy', fillcolor='rgba(255,255,255,0.05)'
         ))
@@ -258,16 +242,7 @@ with col_fg:
             paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
             margin=dict(l=25, r=10, t=10, b=20),
             xaxis=dict(visible=False), 
-            yaxis=dict(
-                visible=True, 
-                range=[0, 100], 
-                tickmode='array',           
-                tickvals=[0, 25, 50, 75, 100], 
-                ticktext=["0", "25", "50", "75", "100"],
-                showgrid=True, 
-                gridcolor='#333', 
-                tickfont=dict(size=10, color='#888')
-            ),
+            yaxis=dict(visible=True, range=[0, 100], tickvals=[0, 25, 50, 75, 100], showgrid=True, gridcolor='#333', tickfont=dict(size=10, color='#888')),
             height=130
         )
         st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True})
@@ -281,37 +256,43 @@ with col_fg:
     st.markdown(f'<div class="date" style="text-align:right; margin-top:5px;">Updated: {now_str}</div></div>', unsafe_allow_html=True)
 
 # =========================================================
-# [2] FRED (데이터 복구 및 포맷팅 수정)
+# [2] FRED (데이터 복구)
 # =========================================================
+# Yahoo Data
 vix_v, vix_c = get_yahoo("^VIX")
 dxy_v, dxy_c = get_yahoo("DX-Y.NYB")
 us10_v, us10_c = get_yahoo("^TNX")
 us2_v, us2_c = get_yahoo("^IRX")
 
-fed_val, fed_chg = get_fred("WALCL")
-tga_val, tga_chg = get_fred("WTREGEN")
-rrp_val, rrp_chg = get_fred("RRPONTSYD")
-m2_val, m2_chg   = get_fred("M2SL")
+# FRED Data
+fed_val, fed_chg = get_fred("WALCL")      # Millions
+tga_val, tga_chg = get_fred("WTREGEN")    # Billions
+rrp_val, rrp_chg = get_fred("RRPONTSYD")  # Billions
+m2_val, m2_chg   = get_fred("M2SL")       # Billions
 
 net_liq = "Loading"
 net_chg = 0.0
 
-# Net Liquidity 계산 (데이터가 하나라도 있으면 계산)
+# Net Liquidity 계산
 if fed_val is not None and tga_val is not None and rrp_val is not None:
-    fed_bil = fed_val / 1000
+    fed_bil = fed_val / 1000 # Convert Million to Billion
     net_val = fed_bil - tga_val - rrp_val
     net_liq = f"{net_val:,.2f}"
+    
     fed_chg_bil = fed_chg / 1000
     net_chg = fed_chg_bil - tga_chg - rrp_chg
 else:
-    net_liq = "0.00"
+    # 데이터 로드 실패 시 0.00 대신 "-" 표시하거나 기존 값 유지
+    # 여기서는 0.00 대신 빈값 처리를 위해 변수 확인
+    if net_liq == "Loading": net_liq = "0.00"
 
+# 포맷팅
 fed_s = f"{fed_val/1000:,.2f}" if fed_val else "0.00"
 tga_s = f"{tga_val:,.2f}" if tga_val else "0.00"
 rrp_s = f"{rrp_val:,.2f}B" if rrp_val else "0.00"
 m2_s  = f"{m2_val:,.0f}" if m2_val else "0.00"
 
-# VIX 포맷팅 (혹시 실수형으로 올 경우 대비)
+# [안전장치] Yahoo 데이터가 실수로 길게 넘어오지 않도록 한번 더 문자열 포맷팅 확인
 if isinstance(vix_c, float): vix_c = f"{vix_c:+.2f}%"
 
 with col_fred:
@@ -339,7 +320,7 @@ with col_fred:
     st.markdown(f'<div class="widget-box"><div class="header-row"><span class="title">FRED</span><span class="date">{now_str}</span></div><div class="data-grid"><div class="col">{l_html}</div><div class="col">{r_html}</div></div></div>', unsafe_allow_html=True)
 
 # =========================================================
-# [3] INDEXerGO (정상)
+# [3] INDEXerGO (잘림 방지)
 # =========================================================
 with col_idx:
     krw_v, krw_c = get_yahoo("KRW=X")
